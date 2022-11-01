@@ -22,6 +22,7 @@ interface Game {
   //Constants
   width: number;
   height: number;
+  aspectRatio : number;
 
   initBallX: number;
   initBallY: number;
@@ -46,17 +47,30 @@ interface Game {
 
   loop: NodeJS.Timer;
 
-  state: 0 | 1 | 2;
+  // state: 0 | 1 | 2;
+  state: string;// "waiting" | "play" | "scored" | "endGame"
   players: Array<string>;
+
+  scores: Array<number>;
+  maxScore: number;
+  lastscored: string;
+
+  winner : string;
   room: string;
 }
 
 interface GameState {
+  // Window dimensions
+  width: number;
+  height: number;
+  aspectRatio : number;
+
   // Game variables
   ballX: number;
   ballY: number;
   ballDirX: number;
   ballDirY: number;
+  ballRadius: number;
 
   paddleOneX: number;
   paddleOneY: number;
@@ -64,8 +78,18 @@ interface GameState {
   paddleTwoX: number;
   paddleTwoY: number;
 
-  state: 0 | 1 | 2;
+  paddleWidth: number;
+  paddleHeight: number;
+
+  state: string; // "waiting" | "play" | "scored" | "endGame"
+
   players : Array<string>;
+
+  scores: Array<number>;
+  maxScore: number;
+
+  winner: string;
+  lastscored: string;
 }
 
 class Game {
@@ -73,15 +97,16 @@ class Game {
     this.server = server;
 
     this.width = 800;
-    this.height = 700;
-
+    this.height = 400;
+    this.aspectRatio = 2 / 3;
+  
     this.initBallX = this.width / 2;
     this.initBallY = this.height / 2;
-    this.ballRadius = 50;
-    this.ballSpeed = 10;
+    this.ballRadius = 10;
+    this.ballSpeed = 3;
 
-    this.paddleWidth = 30;
-    this.paddleHeight = 150;
+    this.paddleWidth = 10;
+    this.paddleHeight = 100;
     this.paddleSpeed = 10;
 
     // Game variables
@@ -96,10 +121,15 @@ class Game {
     this.paddleTwoX = this.width - this.paddleWidth;
     this.paddleTwoY = 0;
 
-    this.state = 0
-
+    //this.state = 0;
+    this.state = "waiting";
     this.players = [];
     this.room = "";
+
+    this.scores = [0,0];
+    this.maxScore = 5;
+    this.winner = "";
+    this.lastscored = "";
   }
   cleanup(): void {
     clearInterval(this.loop);
@@ -109,17 +139,23 @@ class Game {
   
   addPlayer(id: string): void {
     if (this.players.length < 2)
-      this.players.push(id)
-    if (this.players.length === 2) {
-      this.run();
-      this.toggleGameState();
+    {
+      this.players.push(id);
+      console.log("player waiting for oppenent");
     }
+    if (this.players.length === 2) {
+      console.log("players are ready");
+      this.run();
+      this.setState("play");
+      // this.toggleGameState();
+    } 
   }
   setRoomName(name: string): void { this.room = name; }
-  toggleGameState(): void {
-    this.state = (this.state === 0 ? 1 : 2)
-    if (this.state === 2) this.cleanup();
-  }
+  setState(state: string) : void{this.state = state}
+  // toggleGameState(): void {
+  //   this.state = (this.state === 0 ? 1 : 2)
+  //   if (this.state === 2) this.cleanup();
+  // }
   
   async run() {
     let fps: number = 60;
@@ -128,13 +164,28 @@ class Game {
       this.handlePaddleOneBounce();
       this.handlePaddleTwoBounce();
       this.updateScore();
+
       this.server.to(this.room).emit("gameState", this.getGameState());
 
     }, 1000 / fps);
   }
 
-  updateScore(){
-    
+  initGame(id: string)
+  {
+    if(id === this.players[0])
+    {
+      this.ballX = this.width / 10;
+      this.ballY = this.height / 5;
+      console.log("player1 trying to start");
+      this.ballDirX *= -1;
+    }
+    else if(id === this.players[1])
+    {
+      this.ballX = this.width *  (9 / 10) ;
+      this.ballY = this.height / 5;
+      this.ballDirX *= -1;
+      console.log("player2 trying to start");
+    }
   }
 
   updateBall() {
@@ -158,6 +209,26 @@ class Game {
     if (this.ballY + this.ballRadius / 2 >= this.height || this.ballY - this.ballRadius / 2 <= 0)
       this.ballDirY *= -1;
   }
+
+  updateScore(){
+    if(this.ballX > this.paddleTwoX)
+    {
+        this.scores[0]++;
+        console.log("scored1");
+        this.setState("scored");
+        this.lastscored = this.players[0];
+        this.cleanup();
+    }
+    else if (this.ballX < this.paddleOneX + this.paddleWidth)
+    {
+      console.log("scored2");
+        this.scores[1]++;
+        this.setState("scored");
+        this.lastscored = this.players[1];
+        this.cleanup();
+    }
+  }
+
   handlePaddleOneBounce() {
 
     if (
@@ -211,10 +282,19 @@ class Game {
   }
 
   handleInput(payload: UserInput) {
-    if (payload.userId === this.players[0])
-      this.updatePaddleOne(payload.input);
-    else
-      this.updatePaddleTwo(payload.input);
+    if(this.state === "scored" && payload.input === "SPACE")
+    {
+      this.initGame(payload.userId);
+      this.run();
+      this.setState("play");
+    }
+    else if (payload.input !== "SPACE")
+    {
+      if (payload.userId === this.players[0])
+        this.updatePaddleOne(payload.input);
+      else
+        this.updatePaddleTwo(payload.input);
+    }
   }
 
   getGameState(): GameState {
@@ -231,7 +311,20 @@ class Game {
       paddleTwoY: this.paddleTwoY,
 
       state: this.state,
-      players : this.players
+      players : this.players,
+
+      scores : this.scores,
+      maxScore : this.maxScore,
+      winner : this.winner,
+      lastscored : this.lastscored,
+      
+      width : this.width,
+      height : this.height,
+      aspectRatio : this.aspectRatio,
+
+      paddleHeight : this.paddleHeight,
+      paddleWidth : this.paddleWidth,
+      ballRadius : this.ballRadius
     }
   }
 }
@@ -260,27 +353,34 @@ export class AppGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
 
   handleDisconnect(client: Socket) : void{
     this.logger.log(`A player is disconnected ${client.id}`);
+    if (this.playerToGameIndex.has(client.id)) {
+      console.log("game Index ", this.playerToGameIndex.get(client.id))
+      //this.games[this.playerToGameIndex.get(client.id)].toggleGameState()
+      this.games[this.playerToGameIndex.get(client.id)].setState("endGame");
+      //this.games.slice(this.playerToGameIndex.get(client.id), 1);
+      this.playerToGameIndex.delete(client.id);
+    }
   }
 
   @SubscribeMessage('playerJoined')
   joinRoom(socket: Socket): void {
     const roomName: string = socket.id;
     console.log(roomName)
-    if (this.playerToGameIndex.has(socket.id)) {
-      console.log(this.games[this.playerToGameIndex[socket.id]].getPlayers())
-      if (this.games[this.playerToGameIndex[socket.id]].getPlayers().length == 2)
-        this.games[this.playerToGameIndex[socket.id]].toggleGameState()
-      return;
-    }
+    // if (this.playerToGameIndex.has(socket.id)) {
+    //   console.log(this.games[this.playerToGameIndex[socket.id]].getPlayers())
+    //   if (this.games[this.playerToGameIndex[socket.id]].getPlayers().length == 2)
+    //     this.games[this.playerToGameIndex[socket.id]].toggleGameState()
+    //   return;
+    // }
 
     if (this.games.length) {
-      if (this.games[this.games.length - 1].getPlayers().length < 2) {
+      if (this.games[this.games.length - 1].getPlayers().length < 2) {  // player 1 and player 2 are ready to play
         this.games[this.games.length - 1].addPlayer(socket.id);
-        socket.join(this.games[this.games.length - 1].room);
+        socket.join(this.games[this.games.length - 1].room);  
         console.log("Joined game Index=" + (this.games.length - 1), roomName); // not this room
       }
       else {
-        this.games.push(new Game(this.server));
+        this.games.push(new Game(this.server)); // player 1 just created a game and waiting for player 2 to join his room
         this.games[this.games.length - 1].addPlayer(socket.id);
         this.games[this.games.length - 1].setRoomName(roomName);
         socket.join(roomName);
@@ -288,7 +388,7 @@ export class AppGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
       }
     }
     else {
-      this.games.push(new Game(this.server));
+      this.games.push(new Game(this.server)); // yaaay this is the first player create a game in this session, his waiting for player 2 to join
       this.games[0].addPlayer(socket.id);
       this.games[0].setRoomName(roomName);
       socket.join(roomName);

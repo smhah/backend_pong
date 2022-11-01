@@ -23,13 +23,14 @@ class Game {
     constructor(server) {
         this.server = server;
         this.width = 800;
-        this.height = 700;
+        this.height = 400;
+        this.aspectRatio = 2 / 3;
         this.initBallX = this.width / 2;
         this.initBallY = this.height / 2;
-        this.ballRadius = 50;
-        this.ballSpeed = 10;
-        this.paddleWidth = 30;
-        this.paddleHeight = 150;
+        this.ballRadius = 10;
+        this.ballSpeed = 3;
+        this.paddleWidth = 10;
+        this.paddleHeight = 100;
         this.paddleSpeed = 10;
         this.ballX = this.initBallX;
         this.ballY = this.initBallY;
@@ -39,36 +40,54 @@ class Game {
         this.paddleOneY = 0;
         this.paddleTwoX = this.width - this.paddleWidth;
         this.paddleTwoY = 0;
-        this.state = 0;
+        this.state = "waiting";
         this.players = [];
         this.room = "";
+        this.scores = [0, 0];
+        this.maxScore = 5;
+        this.winner = "";
+        this.lastscored = "";
     }
     cleanup() {
         clearInterval(this.loop);
     }
     getPlayers() { return this.players; }
     addPlayer(id) {
-        if (this.players.length < 2)
+        if (this.players.length < 2) {
             this.players.push(id);
+            console.log("player waiting for oppenent");
+        }
         if (this.players.length === 2) {
+            console.log("players are ready");
             this.run();
-            this.toggleGameState();
+            this.setState("play");
         }
     }
     setRoomName(name) { this.room = name; }
-    toggleGameState() {
-        this.state = (this.state === 0 ? 1 : 2);
-        if (this.state === 2)
-            this.cleanup();
-    }
+    setState(state) { this.state = state; }
     async run() {
         let fps = 60;
         this.loop = setInterval(() => {
             this.updateBall();
             this.handlePaddleOneBounce();
             this.handlePaddleTwoBounce();
+            this.updateScore();
             this.server.to(this.room).emit("gameState", this.getGameState());
         }, 1000 / fps);
+    }
+    initGame(id) {
+        if (id === this.players[0]) {
+            this.ballX = this.width / 10;
+            this.ballY = this.height / 5;
+            console.log("player1 trying to start");
+            this.ballDirX *= -1;
+        }
+        else if (id === this.players[1]) {
+            this.ballX = this.width * (9 / 10);
+            this.ballY = this.height / 5;
+            this.ballDirX *= -1;
+            console.log("player2 trying to start");
+        }
     }
     updateBall() {
         this.ballX += this.ballSpeed * this.ballDirX;
@@ -77,6 +96,22 @@ class Game {
             this.ballDirX *= -1;
         if (this.ballY + this.ballRadius / 2 >= this.height || this.ballY - this.ballRadius / 2 <= 0)
             this.ballDirY *= -1;
+    }
+    updateScore() {
+        if (this.ballX > this.paddleTwoX) {
+            this.scores[0]++;
+            console.log("scored1");
+            this.setState("scored");
+            this.lastscored = this.players[0];
+            this.cleanup();
+        }
+        else if (this.ballX < this.paddleOneX + this.paddleWidth) {
+            console.log("scored2");
+            this.scores[1]++;
+            this.setState("scored");
+            this.lastscored = this.players[1];
+            this.cleanup();
+        }
     }
     handlePaddleOneBounce() {
         if (this.ballDirX === -1
@@ -115,10 +150,17 @@ class Game {
         }
     }
     handleInput(payload) {
-        if (payload.userId === this.players[0])
-            this.updatePaddleOne(payload.input);
-        else
-            this.updatePaddleTwo(payload.input);
+        if (this.state === "scored" && payload.input === "SPACE") {
+            this.initGame(payload.userId);
+            this.run();
+            this.setState("play");
+        }
+        else if (payload.input !== "SPACE") {
+            if (payload.userId === this.players[0])
+                this.updatePaddleOne(payload.input);
+            else
+                this.updatePaddleTwo(payload.input);
+        }
     }
     getGameState() {
         return {
@@ -131,7 +173,17 @@ class Game {
             paddleTwoX: this.paddleTwoX,
             paddleTwoY: this.paddleTwoY,
             state: this.state,
-            players: this.players
+            players: this.players,
+            scores: this.scores,
+            maxScore: this.maxScore,
+            winner: this.winner,
+            lastscored: this.lastscored,
+            width: this.width,
+            height: this.height,
+            aspectRatio: this.aspectRatio,
+            paddleHeight: this.paddleHeight,
+            paddleWidth: this.paddleWidth,
+            ballRadius: this.ballRadius
         };
     }
 }
@@ -150,16 +202,15 @@ let AppGateway = class AppGateway {
     }
     handleDisconnect(client) {
         this.logger.log(`A player is disconnected ${client.id}`);
+        if (this.playerToGameIndex.has(client.id)) {
+            console.log("game Index ", this.playerToGameIndex.get(client.id));
+            this.games[this.playerToGameIndex.get(client.id)].setState("endGame");
+            this.playerToGameIndex.delete(client.id);
+        }
     }
     joinRoom(socket) {
         const roomName = socket.id;
         console.log(roomName);
-        if (this.playerToGameIndex.has(socket.id)) {
-            console.log(this.games[this.playerToGameIndex[socket.id]].getPlayers());
-            if (this.games[this.playerToGameIndex[socket.id]].getPlayers().length == 2)
-                this.games[this.playerToGameIndex[socket.id]].toggleGameState();
-            return;
-        }
         if (this.games.length) {
             if (this.games[this.games.length - 1].getPlayers().length < 2) {
                 this.games[this.games.length - 1].addPlayer(socket.id);
