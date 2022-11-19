@@ -16,6 +16,10 @@ interface UserInput {
   userId: string;
 }
 
+interface GameId{
+  id : string;
+}
+
 interface Game {
   server: Server;
 
@@ -81,7 +85,7 @@ interface GameState {
   paddleWidth: number;
   paddleHeight: number;
 
-  state: string; // "waiting" | "play" | "scored" | "endGame"
+  state: string; // "waiting" | "play" | "scored" | "endGame" | "disconnect"
 
   players : Array<string>;
 
@@ -127,7 +131,7 @@ class Game {
     this.room = "";
 
     this.scores = [0,0];
-    this.maxScore = 5;
+    this.maxScore = 2;
     this.winner = "";
     this.lastscored = "";
   }
@@ -137,6 +141,16 @@ class Game {
 
   getPlayers(): Array<string> { return this.players }
   
+  playerDisconnect(id: string): void{
+    if(this.players[0] === id)
+      this.winner = this.players[1];
+    else
+      this.winner = this.players[0];
+    this.setState("disconnect");
+    this.server.to(this.room).emit("gameState", this.getGameState());
+    this.cleanup();
+  } 
+
   addPlayer(id: string): void {
     if (this.players.length < 2)
     {
@@ -226,6 +240,18 @@ class Game {
         this.setState("scored");
         this.lastscored = this.players[1];
         this.cleanup();
+    }
+    if(this.scores[0] === this.maxScore)
+    {
+      this.winner = this.players[0];
+      this.setState("endGame");
+      this.cleanup();
+    }
+    else if (this.scores[1] === this.maxScore)
+    {
+      this.winner = this.players[1];
+      this.setState("endGame");
+      this.cleanup();
     }
   }
 
@@ -356,10 +382,15 @@ export class AppGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
     if (this.playerToGameIndex.has(client.id)) {
       console.log("game Index ", this.playerToGameIndex.get(client.id))
       //this.games[this.playerToGameIndex.get(client.id)].toggleGameState()
-      this.games[this.playerToGameIndex.get(client.id)].setState("endGame");
+      this.games[this.playerToGameIndex.get(client.id)].playerDisconnect(client.id);
       //this.games.slice(this.playerToGameIndex.get(client.id), 1);
       this.playerToGameIndex.delete(client.id);
     }
+  }
+
+  @SubscribeMessage('spectJoined')
+  spectJoinRoom(socket: Socket, payload: GameId): void{
+    console.log("spect trying to spectate this game : " + payload.id);
   }
 
   @SubscribeMessage('playerJoined')

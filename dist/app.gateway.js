@@ -44,7 +44,7 @@ class Game {
         this.players = [];
         this.room = "";
         this.scores = [0, 0];
-        this.maxScore = 5;
+        this.maxScore = 2;
         this.winner = "";
         this.lastscored = "";
     }
@@ -52,6 +52,15 @@ class Game {
         clearInterval(this.loop);
     }
     getPlayers() { return this.players; }
+    playerDisconnect(id) {
+        if (this.players[0] === id)
+            this.winner = this.players[1];
+        else
+            this.winner = this.players[0];
+        this.setState("disconnect");
+        this.server.to(this.room).emit("gameState", this.getGameState());
+        this.cleanup();
+    }
     addPlayer(id) {
         if (this.players.length < 2) {
             this.players.push(id);
@@ -110,6 +119,16 @@ class Game {
             this.scores[1]++;
             this.setState("scored");
             this.lastscored = this.players[1];
+            this.cleanup();
+        }
+        if (this.scores[0] === this.maxScore) {
+            this.winner = this.players[0];
+            this.setState("endGame");
+            this.cleanup();
+        }
+        else if (this.scores[1] === this.maxScore) {
+            this.winner = this.players[1];
+            this.setState("endGame");
             this.cleanup();
         }
     }
@@ -204,9 +223,12 @@ let AppGateway = class AppGateway {
         this.logger.log(`A player is disconnected ${client.id}`);
         if (this.playerToGameIndex.has(client.id)) {
             console.log("game Index ", this.playerToGameIndex.get(client.id));
-            this.games[this.playerToGameIndex.get(client.id)].setState("endGame");
+            this.games[this.playerToGameIndex.get(client.id)].playerDisconnect(client.id);
             this.playerToGameIndex.delete(client.id);
         }
+    }
+    spectJoinRoom(socket, payload) {
+        console.log("spect trying to spectate this game : " + payload.id);
     }
     joinRoom(socket) {
         const roomName = socket.id;
@@ -238,6 +260,12 @@ let AppGateway = class AppGateway {
         this.games[this.playerToGameIndex.get(client.id)].handleInput(Object.assign(Object.assign({}, payload), { userId: client.id }));
     }
 };
+__decorate([
+    (0, websockets_1.SubscribeMessage)('spectJoined'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [socket_io_1.Socket, Object]),
+    __metadata("design:returntype", void 0)
+], AppGateway.prototype, "spectJoinRoom", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)('playerJoined'),
     __metadata("design:type", Function),
