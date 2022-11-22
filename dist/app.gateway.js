@@ -44,7 +44,7 @@ class Game {
         this.players = [];
         this.room = "";
         this.scores = [0, 0];
-        this.maxScore = 2;
+        this.maxScore = 20;
         this.winner = "";
         this.lastscored = "";
     }
@@ -71,6 +71,9 @@ class Game {
             this.run();
             this.setState("play");
         }
+    }
+    addSpec(id) {
+        this.spectators.push(id);
     }
     setRoomName(name) { this.room = name; }
     setState(state) { this.state = state; }
@@ -228,7 +231,8 @@ let AppGateway = class AppGateway {
         }
     }
     spectJoinRoom(socket, payload) {
-        console.log("spect trying to spectate this game : " + payload.id);
+        console.log("spect trying to spectate this game : |" + payload.input + "|");
+        socket.join(payload.input);
     }
     joinRoom(socket) {
         const roomName = socket.id;
@@ -238,6 +242,7 @@ let AppGateway = class AppGateway {
                 this.games[this.games.length - 1].addPlayer(socket.id);
                 socket.join(this.games[this.games.length - 1].room);
                 console.log("Joined game Index=" + (this.games.length - 1), roomName);
+                console.log("he joined game |" + this.games[this.games.length - 1].room + "|");
             }
             else {
                 this.games.push(new Game(this.server));

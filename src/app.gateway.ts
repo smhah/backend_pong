@@ -16,8 +16,8 @@ interface UserInput {
   userId: string;
 }
 
-interface GameId{
-  id : string;
+interface GameID {
+  input: string;
 }
 
 interface Game {
@@ -54,6 +54,7 @@ interface Game {
   // state: 0 | 1 | 2;
   state: string;// "waiting" | "play" | "scored" | "endGame"
   players: Array<string>;
+  spectators: Array<string>;
 
   scores: Array<number>;
   maxScore: number;
@@ -131,7 +132,7 @@ class Game {
     this.room = "";
 
     this.scores = [0,0];
-    this.maxScore = 2;
+    this.maxScore = 20;
     this.winner = "";
     this.lastscored = "";
   }
@@ -164,6 +165,11 @@ class Game {
       // this.toggleGameState();
     } 
   }
+
+  addSpec(id: string): void {
+    this.spectators.push(id);
+  }
+
   setRoomName(name: string): void { this.room = name; }
   setState(state: string) : void{this.state = state}
   // toggleGameState(): void {
@@ -389,8 +395,10 @@ export class AppGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
   }
 
   @SubscribeMessage('spectJoined')
-  spectJoinRoom(socket: Socket, payload: GameId): void{
-    console.log("spect trying to spectate this game : " + payload.id);
+  spectJoinRoom(socket: Socket, payload: GameID): void{
+    console.log("spect trying to spectate this game : |" + payload.input + "|");
+    //this.games[this.games.length - 1].addSpec(socket.id);
+    socket.join(payload.input);
   }
 
   @SubscribeMessage('playerJoined')
@@ -409,6 +417,7 @@ export class AppGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
         this.games[this.games.length - 1].addPlayer(socket.id);
         socket.join(this.games[this.games.length - 1].room);  
         console.log("Joined game Index=" + (this.games.length - 1), roomName); // not this room
+        console.log("he joined game |" + this.games[this.games.length - 1].room + "|")
       }
       else {
         this.games.push(new Game(this.server)); // player 1 just created a game and waiting for player 2 to join his room
